@@ -3,4 +3,4 @@ Code regarding the exercises sheet for the computer vision imparted in Uni Bonn 
 
 Authors:
 Heldert Villegas
-Suraj
+Suraj Kuswaha
