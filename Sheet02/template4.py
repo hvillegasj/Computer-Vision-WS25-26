@@ -109,7 +109,7 @@ def compute_mae(a, b, mask=None):
 
 if __name__ == "__main__":
     # TODO 1: Load the stereo image pair (left.png, right.png) in grayscale
-    left_path  = "data/left.jpg"   # change to your paths
+    left_path  = "data/left.jpg"
     right_path = "data/right.jpg"
 
     left  = cv2.imread(left_path,  cv2.IMREAD_GRAYSCALE)
@@ -121,10 +121,7 @@ if __name__ == "__main__":
     disp_manual = compute_manual_ncc_map(left, right, WINDOW_SIZE, MAX_DISPARITY)
 
     # TODO 3: Compute a benchmark map using cv2.StereoBM with the same parameters
-    # StereoBM requires numDisparities to be a multiple of 16
-    num_disp = int(np.ceil(MAX_DISPARITY / 16.0)) * 16
-
-    stereo = cv2.StereoBM_create(numDisparities=num_disp, blockSize=WINDOW_SIZE)
+    stereo = cv2.StereoBM_create(numDisparities=MAX_DISPARITY, blockSize=WINDOW_SIZE)
     
     # NOTE: StereoBM expects 8-bit images
     disp_bm = stereo.compute(left, right).astype(np.float32) / 16.0  # fixed-point scale
