@@ -172,11 +172,11 @@ if __name__ == "__main__":
     
     # 6. Visualize all results (original, box/gaussian spatial, box/gaussian frequency, spectrum)
     
-    #visualize(img, "Original")
-    #visualize(box_spatial, "Box (Spatial)")
-    #visualize(box_freq, "Box (Frequency)")
-    #visualize(gauss_spatial, "Gauss (Spatial)")
-    #visualize(gauss_freq, "Gauss (Frequency)")
+    visualize(img, "Original")
+    visualize(box_spatial, "Box (Spatial)")
+    visualize(box_freq, "Box (Frequency)")
+    visualize(gauss_spatial, "Gauss (Spatial)")
+    visualize(gauss_freq, "Gauss (Frequency)")
     
     # 7. Verify that MAD < 1×10⁻⁷ for both filters
     assert mad_box < 1e-7, f"MAD for box is too high : {mad_box}"
