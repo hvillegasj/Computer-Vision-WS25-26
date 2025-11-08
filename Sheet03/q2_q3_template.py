@@ -49,9 +49,74 @@ def myMeanShift(accumulator, bandwidth, threshold=None):
     """
     n_r, h, w = accumulator.shape
     
-    # TODO
+    # Computing threshold if None is passed as an argument
+    if threshold is None:
+        m = accumulator.max()
+        if m <= 0:
+            return []
+        threshold = 0.5 * m
     
-    # return peaks
+    # Collecting seed points
+    seeds = np.argwhere(accumulator >= threshold)
+    if len(seeds) == 0:
+        return []
+    
+    peaks = []
+    
+    # Mean shifting from each seed
+    for r, y, x in seeds:
+        r, y, x = float(r), float(y), float(x)
+        
+        while True:
+            # windows
+            r_min = max(0, int(r - bandwidth))
+            r_max = min(n_r - 1, int(r + bandwidth))
+            
+            y_min = max(0, int(y - bandwidth))
+            y_max = min(h - 1, int(y + bandwidth))
+            
+            x_min = max(0, int(x - bandwidth))
+            x_max = min(w - 1, int(x + bandwidth))
+            
+            sub_accumulator = accumulator[r_min:r_max+1, y_min:y_max+1, x_min:x_max+1]
+            
+            # Creating 3D coordinate grids
+            r_axis = np.arange(r_min, r_max+1)[:, None, None]
+            y_axis = np.arange(y_min, y_max+1)[None, :, None]
+            x_axis = np.arange(x_min, x_max+1)[None, None, :]
+            
+            #Squared distances
+            dist2 = (r_axis - r)**2 + (y_axis - y)**2 + (x_axis - x)**2
+            window = (dist2 <= bandwidth * bandwidth).astype(float)
+            
+            weights = sub_accumulator * window
+            S = weights.sum()
+            
+            if S == 0:
+                break
+            
+            r_new = (weights * r_axis).sum() / S
+            y_new = (weights * y_axis).sum() / S
+            x_new = (weights * x_axis).sum() / S
+            
+            shift = np.sqrt((r_new - r)**2 + (y_new - y)**2 + (x_new - x)**2)
+            r, y , x = r_new, y_new, x_new
+            
+            #Convergence
+            if shift < 1e-3:
+                break
+        
+        r, y, x = int(round(r)), int(round(y)), int(round(x))
+        
+        # Clip to array bounds
+        r = np.clip(r, 0, n_r - 1)
+        y = np.clip(y, 0, h - 1)
+        x = np.clip(x, 0, w - 1)
+        
+        val = accumulator[r, y, x]
+        peaks.append((x, y, r, val))
+    
+    return peaks
 
 def main():
     
@@ -107,7 +172,10 @@ def main():
     print("=" * 70)
 
     print("Applying mean shift to find peaks...")
-    # peaks = myMeanShift # TODO
+    #peaks = myMeanShift(accumulator, bandwidth, threshold)
+    #print(f"Found {len(peaks)} raw peaks")
+    
+    
     
     # Visualize corresponding circles on original image    
     # TODO
