@@ -84,36 +84,105 @@ def merge_clusters(segmented_mask, average_mask):
     print (f'The closest clusters are cluster {cluster_a} and cluster {cluster_b}')
     pass
 
-# Import the image of the UAV
-img_path = 'Sheet04\data\img_mosaic.tif'
-img=cv2.cvtColor(cv2.imread(img_path),cv2.COLOR_RGB2BGR)
+def superpixel_segmentation_mask(img, superpixel_mask, average_color_mask, K):
+    
+    # Getting a feature vector per superpixel
+    rep_vectors = get_centers(superpixel_mask, average_color_mask)
+    color_features = rep_vectors[:, :3].astype(np.float32)
+    
+    # K-means clustering of superpixels
+    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 50, 1.0)
+    attempts = 5
+    flags = cv2.KMEANS_RANDOM_CENTERS
 
-#Use the slic algorithm to get superpixels out of the image
-sp_mask = skimage.segmentation.slic(img, 350, 18)
+    compactness, labels, centers = cv2.kmeans(
+        color_features,
+        K,
+        None,
+        criteria,
+        attempts,
+        flags
+    )
+    # labels shape: (N_superpixels, 1)
+    superpixel_cluster_labels = labels.flatten().astype(np.uint8)
+    
+    # Mapping cluster labels to image grid
+    seg_mask = np.zeros_like(superpixel_mask, dtype=np.uint8)
+    for superpixel_id, cluster_label in enumerate(superpixel_cluster_labels):
+        seg_mask[superpixel_mask == superpixel_id] = cluster_label
+        
+    # Deciding which cluster is "building" (i.e choosing the cluster with higher mean intensity)
+    labels = np.unique(seg_mask)
+    building_clusters = []
+    stats = []
+    
+    for c in labels:
+        mask_c = (seg_mask == c)
+        if mask_c.sum() == 0:
+            continue
+        
+        rgb_mean = img[mask_c].mean(axis=0)
+        R, G, B = rgb_mean
+        brightness = (R + G + B)/3.0
+        spread = np.std(rgb_mean) # how different are R,G,B
+        rg_ratio = R / max(G, 1e-6)
+        rb_ratio = R / max(B, 1e-6)
+        
+        stats.append((c, brightness, spread, rg_ratio, rb_ratio))
+    
+    # buildings: bright, color-neutral, not extremely red
+    for c, bright, spread, rg, rb in stats:
+        if bright > 110 and spread < 30:
+            building_clusters.append(c)
+    # If nothign matched, take cluster with best (brightness - alpaha * spread)
+    if not building_clusters:
+        alpha = 1.5
+        scores = [(c, bright - alpha*spread) for c, bright, spread, _, _ in stats]
+        best = max(scores, key=lambda x: x[1])[0]
+        building_clusters = [best]
 
-average_color_mask = average_image(img, sp_mask)
+    
+    # Binary mask of all selected building clusters
+    binary_mask = np.isin(seg_mask, building_clusters).astype(np.uint8)
+    
+    return binary_mask
 
-marked_img = skimage.segmentation.mark_boundaries(average_color_mask, sp_mask)
 
-merge_clusters(sp_mask, average_color_mask)
+def main():
+    # Import the image of the UAV
+    img_path = 'data\img_mosaic.tif'
+    img = cv2.cvtColor(cv2.imread(img_path), cv2.COLOR_BGR2RGB)
 
-# fig, axs = plt.subplots(1,3)
+    #Use the slic algorithm to get superpixels out of the image
+    sp_mask = skimage.segmentation.slic(img, n_segments=400, compactness=18, start_label=0)
 
-# axs[0].imshow(img)
-# axs[0].axis('off')
-# axs[0].set_title('Original image')
+    average_color_mask = average_image(img, sp_mask)
 
-# axs[1].imshow(average_color_mask)
-# axs[1].axis('off')
-# axs[1].set_title('Averaged superpixels')
+    binary_mask = superpixel_segmentation_mask(img, sp_mask, average_color_mask, K=4)
+    
+    boundaries = skimage.segmentation.mark_boundaries(
+        img,            # original RGB image
+        binary_mask,    # your 0/1 mask as "labels"
+        color=(0, 0, 0) # black boundaries;
+    )
 
-# axs[2].imshow(marked_img)
-# axs[2].axis('off')
-# axs[2].set_title('Segmentation result')
+    
+    fig, axs = plt.subplots(1, 3, figsize=(10, 3))
 
-plt.figure()
-plt.imshow(marked_img)
-plt.axis('off')
+    axs[0].imshow(img)
+    axs[0].axis('off')
+    axs[0].set_title('Original image')
+    
+    axs[1].imshow(binary_mask, cmap='gray')
+    axs[1].axis('off')
+    axs[1].set_title('Segmentation mask')
+    
+    axs[2].imshow(boundaries)
+    axs[2].axis('off')
+    axs[2].set_title('Mask boundaries')
+    
+    plt.tight_layout()
+    plt.show()
 
-plt.tight_layout()
-plt.show()
+if __name__ == "__main__":
+    main()
