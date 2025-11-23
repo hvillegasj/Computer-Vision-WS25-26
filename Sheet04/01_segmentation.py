@@ -60,32 +60,17 @@ def get_centers(segmented_mask, average_mask):
 
     return np.array(representative_vectors)
 
-def merge_clusters(segmented_mask, average_mask):
-    """
-    Merge close by clusters
-    
-    Args:
-        segmented_mask: Mask with clustered superpixels to compute upon.
-        average_mask: Mask with the average color per cluster
-    """
-    representative_vectors = get_centers(segmented_mask, average_mask)
-    n = representative_vectors.shape[0]
-
-    color_diff = representative_vectors[:, None, :3] - representative_vectors[None, :, :3]
-    space_diff = representative_vectors[:, None, 3:] - representative_vectors[None, :, 3:]
-
-    color_distance = np.sum(color_diff**2, axis = 2)
-    space_distance = np.sum(space_diff**2, axis = 2)
-
-    #We need to add an arbitrary amount in the diagonal since by construction all of these entries would be 0
-    proximity_matrix = color_distance + space_distance + 500*np.identity(n)
-
-    cluster_a, cluster_b = np.unravel_index(np.argmin(proximity_matrix), proximity_matrix.shape) 
-    print (f'The closest clusters are cluster {cluster_a} and cluster {cluster_b}')
-    pass
-
 def superpixel_segmentation_mask(img, superpixel_mask, average_color_mask, K):
-    
+    """
+    Function that merges the superpixel clusters
+    Args:
+        img: Source image
+        superpixel_mask: Mask with the presegmentation by superpixels
+        average_color_mask: Mask with the presegmentation by superpixels with averaged colors
+        K: Amount of clusters to get after applying k-means
+    Output:
+        binary_mask: Binary mask for buildings and background
+    """
     # Getting a feature vector per superpixel
     rep_vectors = get_centers(superpixel_mask, average_color_mask)
     color_features = rep_vectors[:, :3].astype(np.float32)
@@ -150,7 +135,7 @@ def superpixel_segmentation_mask(img, superpixel_mask, average_color_mask, K):
 
 def main():
     # Import the image of the UAV
-    img_path = 'data\img_mosaic.tif'
+    img_path = 'Sheet04\data\img_mosaic.tif'
     img = cv2.cvtColor(cv2.imread(img_path), cv2.COLOR_BGR2RGB)
 
     #Use the slic algorithm to get superpixels out of the image
@@ -166,7 +151,6 @@ def main():
         color=(0, 0, 0) # black boundaries;
     )
 
-    
     fig, axs = plt.subplots(1, 3, figsize=(10, 3))
 
     axs[0].imshow(img)
