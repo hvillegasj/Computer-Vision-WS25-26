@@ -133,9 +133,10 @@ def superpixel_segmentation_mask(img, superpixel_mask, average_color_mask, K):
     return binary_mask
 
 
+
 def main():
     # Import the image of the UAV
-    img_path = 'Sheet04\data\img_mosaic.tif'
+    img_path = 'data/img_mosaic.tif'
     img = cv2.cvtColor(cv2.imread(img_path), cv2.COLOR_BGR2RGB)
 
     #Use the slic algorithm to get superpixels out of the image
