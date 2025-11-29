@@ -5,63 +5,58 @@ import os
 import matplotlib.pyplot as plt
 from sklearn.mixture import GaussianMixture
 
-
-# TODO: Your implementation here
-
-img_path = 'Sheet05\dataset\images\bike_2007_005878.jpg'
-labels_path = 'Sheet05\dataset\images-labels\bike_2007_005878-anno.png'
-
-
-if not os.path.exists(img_path):
-    print(f"Error: {img_path} not found!")
-
-if not os.path.exists(labels_path):
-    print(f"Error: {labels_path} not found!")
-
-img = cv2.imread(img_path)
-
 # TODO: Smooth the image
 
-def get_histogram(window):
+def populate_training_data(origin_img, label_img):
     """
-    Returns the histogram of the colors in the window
-    Args:
-        window: Window of which the histogram will be extracted.
-    Output:
-        histogram: Color histogram of the window.
-    """
-    bins = [np.arange(257), np.arange(257), np.arange(257)]
-
-    data = window.reshape(-1, 3)
-    
-    histogram, _ = np.histogramdd(data, bins=bins)
-    
-    return histogram
-
-def populate_training_data(origin_img, label_img, window_size):
-    """
-    Fills an array with the color histograms.
+    Fills an array with the pixels of the original image in the positions that the label indicates.
     Args:
         origin_img: Original image
         label_img: Label mask to design the pixels that are to be used
-        window_size: Size of the window to calculate the histograms upon
     Output:
-        histograms_vector: Vector of the histograms of the pixels of interest
+        Flattened vector of the pixels in interest
     """
-    histograms_vector = []
-    h, w = origin_img.shape[:2]
-
     non_zero_mask = (label_img != 0)
     non_zero_mask = np.any(non_zero_mask, axis = -1)
-    y_coords, x_coords = np.nonzero(non_zero_mask)  
+   
+    return origin_img[non_zero_mask]
 
-    for y, x in zip(y_coords, x_coords):
-        valid_min_y = np.max([0, y - window_size])
-        valid_max_y = np.min([y + window_size + 1, h])
-        valid_min_x = np.max([0, x - window_size])
-        valid_max_x = np.min([x + window_size + 1, w])
+def main():
+    #Import the images
+    img_path = 'Sheet05\dataset\images\\bike_2007_005878.jpg'
+    labels_path = 'Sheet05\dataset\images-labels\\bike_2007_005878-anno.png'
 
-        histogram = get_histogram(origin_img[valid_min_y:valid_max_y, valid_min_x:valid_max_x])
-        histograms_vector.append(histogram)
+    if not os.path.exists(img_path):
+        print(f"Error: {img_path} not found!")
+
+    if not os.path.exists(labels_path):
+        print(f"Error: {labels_path} not found!")
+
+    img = cv2.imread(img_path)
+    labels = cv2.imread(labels_path)
+
+    #Fill the histograms with the anotated pixels
+    user_input_pixels = populate_training_data(img, labels)
+
+    #Train the model that we will use to get our unitary weights
+    #only 2 gaussians are used since we want to differenciate background from objects
+    unitary_weights_model = GaussianMixture(n_components = 2).fit(user_input_pixels)
+
+    #Apply the model to get the unitary energy for each pixel
+    #After this, the unitary_weights_mask has 2 chanels [0] is the prob that the pixel is bg,
+    # [1] is the prob that the object is from the object.
+    flat_img = img.reshape((-1, 3))
+    unitary_weights_mask = unitary_weights_model.predict_proba(flat_img)
+
+    # WARNING: Code only to show, delete if is not helpful (i was just testing smth)
+    # show_uw = unitary_weights_mask.reshape((img.shape[:2]))
+    # plt.figure()
+    # plt.imshow(show_uw, cmap='gray') 
+    # plt.title("Estimation using only GMM")
+    # plt.show()
+    # print(unitary_weights_mask.shape)
+
     
-    return np.array(histograms_vector)
+    
+if __name__ == "__main__":
+    main()
