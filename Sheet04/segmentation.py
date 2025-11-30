@@ -151,7 +151,11 @@ def main():
         binary_mask,    # your 0/1 mask as "labels"
         color=(0, 0, 0) # black boundaries;
     )
+<<<<<<< Updated upstream
 
+=======
+    
+>>>>>>> Stashed changes
     fig, axs = plt.subplots(1, 3, figsize=(10, 3))
 
     axs[0].imshow(img)
