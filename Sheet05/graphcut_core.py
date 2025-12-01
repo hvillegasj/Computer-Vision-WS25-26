@@ -13,20 +13,79 @@ def smooth_image(img, k_size=5, sigma=0):
     """
     return cv2.GaussianBlur(img, (k_size, k_size), sigma)
 
-def get_scribble_masks(label_img):
-    """
-    Extract foreground/background masks from the scribble image
-    """
+"""def get_scribble_masks(label_img):
+    
+    #Extract foreground/background masks from the scribble image
+    
     b = label_img[:, :, 0]
     g = label_img[:, :, 1]
     r = label_img[:, :, 2]
     
     # Foreground : white pixels
-    fg_mask = (r > 200) & (g > 200) & (b > 200)
+    fg_mask = (r > 200) & (g > 200) & (b < 200)
     
     # Background : red pixels
-    bg_mask = (r > 200) & (g < 60) & (b < 60)
+    bg_mask = (r > 200) & (g < 80) & (b < 80)
     
+    return fg_mask, bg_mask"""
+
+def get_scribble_masks(label_img):
+    """
+    Extract foreground/background masks from the scribble image,
+    using only NumPy. Assumes:
+      - background is black (0,0,0)
+      - there are two main scribble colors (FG and BG).
+    """
+
+    h, w = label_img.shape[:2]
+
+    # All non-black pixels = some scribble
+    b = label_img[:, :, 0]
+    g = label_img[:, :, 1]
+    r = label_img[:, :, 2]
+    scribble_mask = (r != 0) | (g != 0) | (b != 0)
+
+    if not np.any(scribble_mask):
+        raise ValueError("No scribbles found in label image.")
+
+    # Collect scribble colors
+    scribble_pixels = label_img[scribble_mask].reshape(-1, 3)
+
+    # Unique colors and their counts
+    unique_colors, counts = np.unique(scribble_pixels, axis=0, return_counts=True)
+
+    # Drop pure black if it slipped in
+    non_black = ~np.all(unique_colors == 0, axis=1)
+    unique_colors = unique_colors[non_black]
+    counts = counts[non_black]
+
+    if unique_colors.shape[0] < 2:
+        raise ValueError("Less than two scribble colors found.")
+
+    # Two most frequent scribble colors
+    order = np.argsort(counts)[::-1]
+    main_colors = unique_colors[order[:2]].astype(np.float32)  # (2,3)
+
+    # Brighter color = FG (yellow-ish), darker = BG (red)
+    intensities = main_colors.mean(axis=1)  # average B+G+R
+    fg_idx = np.argmax(intensities)
+    bg_idx = 1 - fg_idx
+
+    fg_color = main_colors[fg_idx]
+    bg_color = main_colors[bg_idx]
+
+    # Classify each scribble pixel as closer to fg_color or bg_color
+    fg_mask = np.zeros((h, w), dtype=bool)
+    bg_mask = np.zeros((h, w), dtype=bool)
+
+    pix = scribble_pixels.astype(np.float32)
+    dist_fg = np.sum((pix - fg_color) ** 2, axis=1)
+    dist_bg = np.sum((pix - bg_color) ** 2, axis=1)
+    is_fg = dist_fg < dist_bg
+
+    fg_mask[scribble_mask] = is_fg
+    bg_mask[scribble_mask] = ~is_fg
+
     return fg_mask, bg_mask
 
 def compute_iou(pred_mask, ground_truth_mask):
@@ -63,12 +122,13 @@ class GraphCut:
         """
         Fit separate GMMs for foreground and background from scibbels
         """
+
         # Collect pixels
         fg_pixels = self.img[self.fg_mask].reshape(-1, 3)
         bg_pixels = self.img[self.bg_mask].reshape(-1, 3)
         
         self.fg_gmm = GaussianMixture(n_components=self.n_components, covariance_type="full", random_state=0).fit(fg_pixels)
-        self.bg_gmm = GaussianMixture(n_components=self.n_components, covariance_type="full", random_state=0).fit(bg_pixels)#
+        self.bg_gmm = GaussianMixture(n_components=self.n_components, covariance_type="full", random_state=0).fit(bg_pixels)
 
     def compute_unary_cost(self):
         """Compute unary terms for each pixel for FG and BG
@@ -90,7 +150,7 @@ class GraphCut:
         D_bg[self.fg_mask] = np.inf
         
         # Background scribbels : cannot be foreground
-        D_fg[self.bg_mask] = np.inf 
+        D_fg[self.bg_mask] = np.inf
         D_bg[self.fg_mask] = 0.0
         
         return D_fg, D_bg
@@ -182,33 +242,47 @@ def populate_training_data(origin_img, label_img):
 
 def main():
     #Import the images
-    filename = "208001"
-    img_path = os.path.join(ROOT, "dataset", "images", f"{filename}.jpg")
-    labels_path = os.path.join(ROOT, "dataset", "images-labels", f"{filename}-anno.png")
-    ground_truth_path = os.path.join(ROOT, "dataset", "images-gt", f"{filename}.png")
+    image_names = [
+    "106024",
+    "208001",
+    "aero_2008_002358",
+    "bike_2007_005878",
+    "person7",
+    "scissors"
+    ]
     
-    if not os.path.exists(img_path):
-        print(f"Error: {img_path} not found!")
-
-    if not os.path.exists(labels_path):
-        print(f"Error: {labels_path} not found!")
-
-    if not os.path.exists(ground_truth_path):
-        print(f"Error: {ground_truth_path} not found!")
+    iou_scores = []
+    for name in image_names:
+        img_path = os.path.join(ROOT, "dataset", "images", f"{name}.jpg")
+        labels_path = os.path.join(ROOT, "dataset", "images-labels", f"{name}-anno.png")
+        ground_truth_path = os.path.join(ROOT, "dataset", "images-gt", f"{name}.png")
         
-    img = cv2.imread(img_path)
-    labels = cv2.imread(labels_path)
-    ground_truth = cv2.imread(ground_truth_path, cv2.IMREAD_GRAYSCALE)
+        if not os.path.exists(img_path):
+            print(f"Error: {img_path} not found!")
+
+        if not os.path.exists(labels_path):
+            print(f"Error: {labels_path} not found!")
+
+        if not os.path.exists(ground_truth_path):
+            print(f"Error: {ground_truth_path} not found!")
+            
+        img = cv2.imread(img_path)
+        labels = cv2.imread(labels_path)
+        ground_truth = cv2.imread(ground_truth_path, cv2.IMREAD_GRAYSCALE)
+        
+        segmenter = GraphCut(img, labels, n_components=5, lambda_smooth=80.0)
+        
+        seg_mask = segmenter.build_graph_and_segment()
+        
+        # Compute IoU
+        iou_score = compute_iou(seg_mask, ground_truth)
+        print(f"IoU score : {iou_score:.3f}")
+        iou_scores.append(iou_score)
     
-    segmenter = GraphCut(img, labels, n_components=5, lambda_smooth=80.0)
+    avg_iou = sum(iou_scores) / len(iou_scores)
+    print("Average IoU:", avg_iou)
     
-    seg_mask = segmenter.build_graph_and_segment()
-    
-    # Compute IoU
-    iou_score = compute_iou(seg_mask, ground_truth)
-    print(f"IoU score : {iou_score:.3f}")
-    
-     # Show results (OpenCV uses BGR, matplotlib expects RGB)
+    """# Show results
     plt.figure(figsize=(12, 4))
     plt.subplot(1, 3, 1)
     plt.title("Image")
@@ -226,7 +300,7 @@ def main():
     plt.axis('off')
 
     plt.tight_layout()
-    plt.show()
+    plt.show()"""
 
     """#Fill the histograms with the anotated pixels
     user_input_pixels = populate_training_data(img, labels)
