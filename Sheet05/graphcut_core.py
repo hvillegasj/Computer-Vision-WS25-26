@@ -13,22 +13,6 @@ def smooth_image(img, k_size=5, sigma=0):
     """
     return cv2.GaussianBlur(img, (k_size, k_size), sigma)
 
-"""def get_scribble_masks(label_img):
-    
-    #Extract foreground/background masks from the scribble image
-    
-    b = label_img[:, :, 0]
-    g = label_img[:, :, 1]
-    r = label_img[:, :, 2]
-    
-    # Foreground : white pixels
-    fg_mask = (r > 200) & (g > 200) & (b < 200)
-    
-    # Background : red pixels
-    bg_mask = (r > 200) & (g < 80) & (b < 80)
-    
-    return fg_mask, bg_mask"""
-
 def get_scribble_masks(label_img):
     """
     Extract foreground/background masks from the scribble image,
@@ -225,20 +209,6 @@ class GraphCut:
         seg_mask = np.uint8(segments) * 255 # FG = 255 and BG = 0
         
         return seg_mask
-              
-def populate_training_data(origin_img, label_img):
-    """
-    Fills an array with the pixels of the original image in the positions that the label indicates.
-    Args:
-        origin_img: Original image
-        label_img: Label mask to design the pixels that are to be used
-    Output:
-        Flattened vector of the pixels in interest
-    """
-    non_zero_mask = (label_img != 0)
-    non_zero_mask = np.any(non_zero_mask, axis = -1)
-   
-    return origin_img[non_zero_mask]
 
 def main():
     #Import the images
@@ -301,27 +271,6 @@ def main():
 
     plt.tight_layout()
     plt.show()
-
-    """#Fill the histograms with the anotated pixels
-    user_input_pixels = populate_training_data(img, labels)
-
-    #Train the model that we will use to get our unitary weights
-    #only 2 gaussians are used since we want to differenciate background from objects
-    unitary_weights_model = GaussianMixture(n_components = 2).fit(user_input_pixels)
-
-    #Apply the model to get the unitary energy for each pixel
-    #After this, the unitary_weights_mask has 2 chanels [0] is the prob that the pixel is bg,
-    # [1] is the prob that the object is from the object.
-    flat_img = img.reshape((-1, 3))
-    unitary_weights_mask = unitary_weights_model.predict_proba(flat_img)"""
-
-    # WARNING: Code only to show, delete if is not helpful (i was just testing smth)
-    # show_uw = unitary_weights_mask.reshape((img.shape[:2]))
-    # plt.figure()
-    # plt.imshow(show_uw, cmap='gray') 
-    # plt.title("Estimation using only GMM")
-    # plt.show()
-    # print(unitary_weights_mask.shape)
 
     
     
