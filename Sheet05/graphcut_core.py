@@ -151,7 +151,7 @@ class GraphCut:
         
         # Background scribbels : cannot be foreground
         D_fg[self.bg_mask] = np.inf
-        D_bg[self.fg_mask] = 0.0
+        D_bg[self.bg_mask] = 0.0
         
         return D_fg, D_bg
     
@@ -282,7 +282,7 @@ def main():
     avg_iou = sum(iou_scores) / len(iou_scores)
     print("Average IoU:", avg_iou)
     
-    """# Show results
+    # Show results
     plt.figure(figsize=(12, 4))
     plt.subplot(1, 3, 1)
     plt.title("Image")
@@ -300,7 +300,7 @@ def main():
     plt.axis('off')
 
     plt.tight_layout()
-    plt.show()"""
+    plt.show()
 
     """#Fill the histograms with the anotated pixels
     user_input_pixels = populate_training_data(img, labels)
