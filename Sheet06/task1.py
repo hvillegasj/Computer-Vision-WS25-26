@@ -8,21 +8,28 @@ from scipy.stats import multivariate_normal
 '''
 BG_pivot is the same shape as the input image but with single channel, all pixels have value 1.
 '''
-def calculate_normal (x, mu, sigmaSQ):
+def compute_rho (x, mu, sigmaSQ, lr):
     """
-    Calculates probability of x in under the distribution N(mu,sigma).
-    Assumes a 3-dimensional normal with diagonal covariance matrix.
+    Computes a dynamic learning rate rho for the matched Gaussian.
     """
-    eps = 1e-6  # numerical stability
-    sigmaSQ = np.maximum(sigmaSQ, eps)
+    # avoid division by zero
+    if sigmaSQ < 1e-6:
+        sigmaSQ = 1e-6
 
+    # squared distance between pixel and mean
     diff = x - mu
-    exponent = -0.5 * np.sum((diff**2) / sigmaSQ)
+    dist_sq = np.sum(diff * diff)
 
-    denom = np.sqrt((2 * np.pi)**3 * np.prod(sigmaSQ))
+    # confidence: high if x is close to mu, low otherwise
+    confidence = np.exp(-0.5 * dist_sq / sigmaSQ)
 
-    return np.exp(exponent) / denom
+    # scale with learning rate
+    rho = lr * confidence
 
+    # clamp rho to keep updates stable
+    rho = np.clip(rho, 1e-4, 0.5 * lr)
+
+    return rho
 
 class MOG():
     def __init__(self,height=None, width=None, number_of_gaussians=None, background_thresh=None, lr=None):
@@ -59,51 +66,22 @@ class MOG():
                     #match_index = np.argwhere(matches)
                     match_idx = np.where(matches)[0]
                     m = match_idx[np.argmin(distances[match_idx])]
-                    rho = self.lr * calculate_normal(pixel_color, self.mus[i, j, m], self.sigmaSQs[i, j, m])
-                    """match_probability = Calculate_normal(pixel_color, self.mus[i,j,match_index], self.sigmaSQs[i,j,match_index])
-                    rho = self.lr * match_probability
-
-                    # Update the mean of the matched distribution
-                    old_mu = self.mus[i, j, match_index,:]
-                    self.mus[i,j,match_index,:] = (1-rho) * old_mu + rho * pixel_color 
-
-                    #Update the variance of the matched distribution
-                    difference = pixel_color - self.mus[i,j,match_index]
-                    diff_squared = np.dot(difference, difference)
-                    self.sigmaSQs[i,j,match_index] = (1-rho) * self.sigmaSQs[i,j,match_index] + rho * diff_squared"""
+                    # If the pixel is close to Gaussian mean, rho is large and if it is far away i rho is small
+                    rho = compute_rho(pixel_color, self.mus[i, j, m], self.sigmaSQs[i, j, m], self.lr)
                     
                     old_mu = self.mus[i, j, m].copy()
+                    # Update mean
                     self.mus[i, j, m] = (1 - rho) * old_mu + rho * pixel_color
-                    diff = pixel_color - self.mus[i, j, m]
-                    diff_sq = float(np.sum(diff * diff))          # ||x - mu||^2
+                    # Update variance using old mean
+                    diff = pixel_color - old_mu
+                    diff_sq = np.sum(diff * diff)
+
                     self.sigmaSQs[i, j, m] = (1 - rho) * self.sigmaSQs[i, j, m] + rho * diff_sq
 
+                    # prevent variance from becoming too small
+                    self.sigmaSQs[i, j, m] = max(self.sigmaSQs[i, j, m], 15.0)
+
                 else:
-                    """#Choose the distribution with the least amount of evidence
-                    min_weight_index = np.argmin(self.omegas[i,j])
-
-                    #Replace the distribution
-                    self.mus[i,j,min_weight_index] = pixel_color 
-                    self.sigmaSQs[i,j,min_weight_index] = 200.0
-                    self.omegas[i,j,min_weight_index] = 0.02 #TODO: Adjust these two numbers (specially the second)
-
-                    #Update and normalize the weights
-                    self.omegas[i,j] = (1-self.lr) * self.omegas[i,j] + self.lr * matches
-                    self.omegas[i,j] = self.omegas[i,j] / np.sum(self.omegas[i,j]) 
-
-                    #Set up of the second learning rate and find the matched distribution
-                    match_index = np.argwhere(matches)
-                    match_probability =  Calculate_normal(pixel_color, self.mus[i,j,match_index], self.sigmaSQs[i,j,match_index])
-                    rho = self.lr * match_probability
-
-                    #Update the mean of the matched distribution
-                    old_mu = self.mus[i, j, match_index, :]
-                    self.mus[i,j,match_index,:] = (1-rho) * old_mu + rho * pixel_color 
-
-                    #Update the variance of the matched distribution
-                    difference = pixel_color - self.mus[i,j,match_index]
-                    diff_squared = np.dot(difference, difference)
-                    self.sigmaSQs[i,j,match_index] = (1-rho) * self.sigmaSQs[i,j,match_index] + rho * diff_squared"""
                     # If nothing matched, matches is all False therefore it would try to update the matched gaussian which does not exist
                     k = int(np.argmin(self.omegas[i, j]))
                     self.mus[i, j, k] = pixel_color
@@ -116,12 +94,6 @@ class MOG():
                 
                 #Now that we updated the GMM on the pixel decide if it is currently background or foreground
                 #Sort descending by the ratio omega/sigma
-                """ratios = self.omegas/self.sigmaSQs
-                descending_ratio_indexes = np.argsort(ratios)[::-1]
-                self.mus[i,j] = self.mus[i,j][descending_ratio_indexes]
-                self.sigmaSQs[i,j] = self.sigmaSQs[i,j][descending_ratio_indexes]
-                self.omegas[i,j] = self.omegas[i,j][descending_ratio_indexes]
-                matches = matches[descending_ratio_indexes]"""
                 
                 ratios = self.omegas[i, j] / (self.sigmaSQs[i, j] + 1e-6)
                 order = np.argsort(ratios)[::-1]
@@ -129,7 +101,6 @@ class MOG():
                 self.mus[i, j] = self.mus[i, j][order]
                 self.sigmaSQs[i, j] = self.sigmaSQs[i, j][order]
                 self.omegas[i, j] = self.omegas[i, j][order]
-                matches = matches[order]
 
 
                 accumulative_sum = np.cumsum(self.omegas[i,j])
@@ -137,8 +108,11 @@ class MOG():
                 B = np.searchsorted(accumulative_sum, self.background_thresh) + 1 # If the first componenet already crosses the threshold, it would return 0
 
                 #If the pixel matches with a background distribution is background and viceversa
-
-                if np.any(matches) and (np.argmax(matches) < B):
+                # recompute matches with sorted components
+                distances_sorted = np.linalg.norm(pixel_color - self.mus[i, j], axis=1)
+                matches_sorted = (distances_sorted**2) < 9.0 * self.sigmaSQs[i, j]
+                
+                if np.any(matches_sorted) and (np.argmax(matches_sorted) < B):
                     BG_pivot[i, j] = 0
                 else:
                     BG_pivot[i, j] = 255

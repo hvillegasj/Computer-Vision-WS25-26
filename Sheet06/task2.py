@@ -175,10 +175,9 @@ def count_people_in_frames(frames):
         # 3) get person-like boxes
         det_boxes = boxes_from_mask(fg, min_area=min_area, max_area_ratio=0.08, min_aspect=min_aspect, max_aspect=max_aspect)
 
-        print(f"[DEBUG] frame {f_idx}: mean={np.mean(fg):.1f}, boxes={len(det_boxes)}")
+        #print(f"[DEBUG] frame {f_idx}: mean={np.mean(fg):.1f}, boxes={len(det_boxes)}")
         
         # 4) match detections to existing tracks
-        #matches, _, unmatched_dets = match_detections_to_track(tracks, det_boxes, iou_threshold==iou_threshold)
         matches, _, unmatched_dets = match_by_distance(tracks, det_boxes, dist_thresh=50)
         
         # update matched tracks
@@ -198,7 +197,7 @@ def count_people_in_frames(frames):
 
         # keep tracks alive longer
         tracks = [t for t in tracks if (f_idx - t.last_seen) <= max_missing]
-
+        
     return len(confirmed_ids)
 
 def load_frames(img_dir = "imgs"):
