@@ -152,7 +152,126 @@ def lag_smoother(x_pred, P_pred, x_filt, P_filt, dt=0.1, lag=5):
         P_smooth[start] = Ps[0]
     
     return x_smooth, P_smooth
+
+def generate_deterministic_states(dt, x_0, T, eps):
+    """
+    Generates states following the evolution model
+
+    Args:
+        dt: Time step
+        x_0: Initial state
+        T: Number of steps
+        eps: Deterministic noise
+    """
+    states = np.zeros((T,4))
+    states[0] = x_0
     
+    for i in range(T-1):
+        x, y, theta, v = states[i]
+
+        x_coord = x + dt * v * np.cos(theta) + eps[0]
+        y_coord = y + dt * v * np.sin(theta) + eps[1]
+        theta_coord = theta + 0.6 * np.sin(0.2 * i * dt) * dt # Have to take i * dt to get the actual time
+
+        states[i+1]=np.array([x_coord, y_coord, theta_coord, v], dtype = float)
+    
+    return states
+
+def generate_deterministic_measurements(states, delta):
+    """
+    Generates measurements following the evolution model
+
+    Args:
+        states: Actual states of the system
+        delta: Deterministic noise
+    """
+    T = states.shape[0]
+
+    measurements = np.zeros((T,4))
+
+    dx = np.arange(T) * delta[0]
+    dy = np.arange(T) * delta[1]
+
+    measurements[:,0] = states[:,0] + dx
+    measurements[:,1] = states[:,1] + dy
+    measurements[:,2] = np.zeros(T)
+    measurements[:,3] = np.zeros(T)
+
+    return np.array(measurements, dtype = float)
+
+def calculate_jacobian_g(dt, theta, v):
+    """
+    Calculate the instances of the jacobian matrixes needed for the EKF
+    
+    Args:
+        dt: temporal step
+        theta: Angular argument
+        v: Speed argument
+    """
+    Jg = np.array(
+        [[1, 0, -dt * v * np.sin(theta), dt * np.cos(theta)],
+         [0, 1, dt * v * np.cos(theta), dt * np.sin(theta)],
+         [0, 0, 1, 0],
+         [0, 0, 0, 1]]
+    )
+
+    return Jg
+
+def extended_kalman_filter(observations, dt, sp, sm):
+    """
+    Filters the measurements using the extended Kalman filter
+
+    Args:
+        observations: List of measurements
+        dt: Temporal step
+        sp: Process noise parameter
+        sm: Measurement noise parameter
+    """
+    updated_measurements = np.zeros_like(observations)
+    updated_measurements[0] = observations[0]
+
+    #Process noise covariance matrix
+    sigma_p = sp * np.eye(4)
+
+    #Measurement noise covariance matrix
+    sigma_m = sm * np.eye(4)
+
+    #Constant jacobian of h
+    Phi = np.array([
+            [1, 0, 0, 0],
+            [0, 1, 0, 0],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0]
+        ], dtype=float)
+
+    # Initialize covariance
+    P0 = 10.0 * np.eye(4)
+
+    for i, vector in enumerate(observations[1:], start = 1):
+
+        mu_prev = updated_measurements[i-1]
+
+        #Initialize the matrices for the prediction step
+        Psi = calculate_jacobian_g(dt, vector[2], vector[3])
+        #Note we dont consider the upsilon matrix, because in our case it would be the identity
+
+        mu_pred = np.array(
+            [mu_prev[0] + dt * mu_prev[3] * np.cos(mu_prev[2]),
+             mu_prev[1] + dt * mu_prev[3] * np.sin(mu_prev[2]),
+             mu_prev[2],
+             mu_prev[3]]
+            )
+        
+        sigma_pred = Psi @ P0 @ Psi.T + sigma_p
+
+        #Kalman gain
+        K = sigma_pred @ Phi @ np.linalg.inv(sigma_m + Phi @ sigma_pred @ Phi) #Skip the transposes because the matrix is symmetric
+
+        updated_measurements[i] = mu_pred + K @ (vector - mu_pred) #NOTE: It should be h(mu_pred), but i leave it as so bc of the def of h
+        P0 = (np.eye(4) - K @ Phi) @ sigma_pred
+    
+    return updated_measurements
+
 def main():
     # Load observations # 1
     try:
@@ -195,9 +314,29 @@ def main():
     plt.title("2D Tracking: observations vs filtered vs fixed-lag smoothed")
     plt.legend()
     plt.axis("equal")
+
+    initial_state = np.array([0,0,0,1])
+    dt = 0.1
+    eps = 0.001 * np.ones(4)
+    delta = 0.005 * np.ones(2)
+
+    generated_states = generate_deterministic_states(0.1, initial_state, 200, eps)
+
+    generated_measurements = generate_deterministic_measurements(generated_states, delta)
+
+    filtered = extended_kalman_filter(generated_measurements, dt, 0.001, 0.05)
+
+    plt.figure(figsize=(10, 8))
+    plt.scatter(generated_measurements[:, 0], generated_measurements[:, 1], c='red', s=10, alpha=0.3, label='Observations')
+    plt.plot(filtered[:, 0], filtered[:, 1], color='blue', linewidth=2, label='EKF Filtered Path')
+    plt.title("Vehicle Trajectory: Observations vs. EKF Filtered", fontsize=14)
+    plt.xlabel("X Position", fontsize=12)
+    plt.ylabel("Y Position", fontsize=12)
+    plt.legend()
+    plt.grid(True, linestyle='--', alpha=0.6)
+    plt.axis('equal')
+
     plt.show()
-
-
 
 if __name__ == "__main__":
     main()
