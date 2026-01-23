@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+
 def load(path):
     """
     Loading the shapes and returning them
@@ -26,7 +27,19 @@ def plotter(shapes, title, mean_shape=None):
     plt.ylabel("y")
     plt.grid(True, alpha=0.25)
     plt.show()
+
+def shapes_to_vectors(shapes):
+    num_shapes, num_landmarks, _ = shapes.shape
     
+    return shapes.reshape(num_shapes, 2 * num_landmarks)
+
+def vectors_to_shapes(vectors, num_landmarks):
+    
+    return vectors.reshape(num_landmarks, 2)
+
+
+# =================================== Task 2.1 ===================================
+# ================================================================================
 def compute_affine_transform(source_pts, target_pts):
     """
     Computing affine transform that maps source points to the target points using least square method
@@ -100,6 +113,81 @@ def generalized_procrustes_affine(shapes, max_iter = 100, tol = 1e-7):
             break
             
     return aligned_shapes, mean_shape
+# =================================== Task 2.2.1 ===================================
+# ==================================================================================
+
+def compute_pca(shape_vectors):
+    """
+    Manual PCA
+    """
+    
+    num_shapes, _ = shape_vectors.shape
+    
+    # Mean shape
+    mean_vector = shape_vectors.mean(axis=0)
+    
+    # Center data
+    centered = shape_vectors - mean_vector
+    
+    # Covariance matrix
+    cov = (centered.T @ centered) / (num_shapes - 1)
+    
+    # Eigen decomposition
+    eigenvalues, eigenvectors = np.linalg.eigh(cov)
+    
+    # Sort descending
+    order = np.argsort(eigenvalues)[::-1]
+    eigenvalues = eigenvalues[order]
+    eigenvectors = eigenvectors[:, order]
+
+    return mean_vector, eigenvectors, eigenvalues
+
+def choose_num_components_for_energy(eigenvalues, energy_threshold):
+    """
+    Choose smallest N such that cumulatoive varinace >= threshold
+    """
+    total_energy = np.sum(eigenvalues)
+    cumulative_energy = np.cumsum(eigenvalues)
+    energy_ratio = cumulative_energy / (total_energy + 1e-12)
+    
+    N = int(np.searchsorted(energy_ratio, energy_threshold) + 1)
+    
+    return N
+
+# =================================== Task 2.2.2 ===================================
+# ==================================================================================
+
+def fit_ppca(shape_vectors, latent_dim):
+    """
+    Fit PPCA using the closed form solution via eigen decomposition of sample covariance
+    """
+    num_shapes, num_features = shape_vectors.shape
+    
+    mean_vector = shape_vectors.mean(axis=0)
+    centered = shape_vectors - mean_vector
+    
+    cov = (centered.T @ centered) / (num_shapes - 1)
+    
+    # Eigen decomposition
+    eigenvalues, eigenvectors = np.linalg.eigh(cov)
+    order = np.argsort(eigenvalues)[::-1]
+    eigenvalues = eigenvalues[order]
+    eigenvectors = eigenvectors[:, order]
+    
+    # Take top-q
+    eigenvalues_latent = eigenvalues[:latent_dim]
+    eigenvectors_latet = eigenvectors[:latent_dim]
+    
+    if latent_dim < num_features:
+        noise_variance_sigma2 = float(np.mean(eigenvalues[latent_dim:]))
+    else:
+        noise_variance_sigma2 = 0.0
+    
+    # W = U_q(lambda_q - sigma^2I)*0.5R
+    adjusted = np.maximum(eigenvalues_latent - noise_variance_sigma2, 0.0)
+    matrix_W = eigenvectors_latet @ np.diag(np.sqrt(adjusted))
+    
+    return mean_vector, matrix_W, noise_variance_sigma2, eigenvectors_latet, eigenvalues_latent
 
 def main():
     shapes = load("hands_train.npy")
